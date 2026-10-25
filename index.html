@@ -2120,7 +2120,17 @@ body::before {
 
       // 3. UI INITIALIZER
       document.addEventListener('DOMContentLoaded', () => {
-        const d = (id) => document.getElementById(id);
+        // null-safe DOM 헬퍼 (존재하지 않는 요소 접근 시에도 스크립트 중단 방지)
+        const d = (id) => document.getElementById(id) || {
+          style: {},
+          classList: { add() {}, remove() {} },
+          textContent: '',
+          innerHTML: '',
+          value: '',
+          disabled: false,
+          onclick: null,
+          onchange: null
+        };
         const c = window.defaultClassifier;
         
         // 상태 갱신
@@ -2237,29 +2247,75 @@ body::before {
             d('state-loading').style.display = 'none';
             d('state-result').style.display = 'block';
 
-            d('res-model-name').textContent = res.identifiedModel || res.classInfo.nameKo;
-            d('res-engine-name').textContent = res.isGeminiVision ? 'Gemini 3.8 AI' : '스마트 분석';
-            d('res-className').textContent = res.classInfo.nameKo;
-            d('res-badge').className = 'result-badge ' + res.classInfo.badgeClass;
-            d('res-confidence').textContent = res.confidence.toFixed(1);
-            d('res-gauge-fill').style.width = res.confidence + '%';
-            d('res-reason-text').textContent = res.reason;
+            // 안전한 텍스트 갱신 함수
+            const setText = (id, val) => {
+              const el = d(id);
+              if (el) el.textContent = val;
+            };
 
-            d('prob-compact-val').textContent = res.probabilities.compact.toFixed(1) + '%';
-            d('prob-compact-bar').style.width = res.probabilities.compact + '%';
-            d('prob-midsize-val').textContent = res.probabilities.midsize.toFixed(1) + '%';
-            d('prob-midsize-bar').style.width = res.probabilities.midsize + '%';
-            d('prob-large-val').textContent = res.probabilities.large.toFixed(1) + '%';
-            d('prob-large-bar').style.width = res.probabilities.large + '%';
+            setText('res-model-name', res.identifiedModel || res.classInfo.nameKo);
+            setText('res-engine-name', res.isGeminiVision ? 'Gemini 3.8 AI' : '스마트 분석');
+            setText('res-class-name', res.classInfo.nameKo);
+            
+            const icons = { compact: '🚗', midsize: '🚙', large: '🚐' };
+            setText('res-class-icon', icons[res.category] || '🚗');
 
-            d('res-parking-zone').textContent = res.parkingRecommendation.zone;
-            d('res-parking-tip').textContent = res.parkingRecommendation.tip;
-            d('meta-dims').textContent = res.metrics.estimatedDimensions;
-            d('meta-benefit').textContent = res.parkingSpec.parkingArea;
-            d('meta-ratio').textContent = res.isGeminiVision ? 'Gemini AI 추론 완료' : '비율 분석 완료';
-            d('analysis-timestamp').textContent = '분석 시각: ' + res.metrics.timestamp;
+            const badge = d('res-badge');
+            if (badge) badge.className = 'result-badge ' + res.classInfo.badgeClass;
+
+            setText('res-confidence', res.confidence.toFixed(1));
+            
+            const gauge = d('res-gauge-fill');
+            if (gauge) {
+              gauge.style.width = '0%';
+              setTimeout(() => { gauge.style.width = res.confidence + '%'; }, 50);
+            }
+
+            setText('res-reason-text', res.reason || '정밀 분석이 완료되었습니다.');
+
+            const setBar = (valId, barId, num) => {
+              setText(valId, num.toFixed(1) + '%');
+              const bar = d(barId);
+              if (bar) {
+                bar.style.width = '0%';
+                setTimeout(() => { bar.style.width = Math.min(100, Math.max(0, num)) + '%'; }, 50);
+              }
+            };
+
+            setBar('prob-compact-val', 'prob-compact-bar', res.probabilities.compact);
+            setBar('prob-midsize-val', 'prob-midsize-bar', res.probabilities.midsize);
+            setBar('prob-large-val', 'prob-large-bar', res.probabilities.large);
+
+            setText('res-parking-zone', res.parkingRecommendation.zone);
+            setText('res-parking-tip', res.parkingRecommendation.tip);
+            setText('meta-dims', res.metrics.estimatedDimensions || res.classInfo.spec.standard);
+            setText('meta-benefit', res.parkingSpec ? res.parkingSpec.parkingArea : '주차 규격 산정 완료');
+            setText('meta-ratio', res.isGeminiVision ? 'Gemini 3.8 실시간 추론 완료' : '비율 분석 완료');
+            setText('analysis-timestamp', '분석 시각: ' + res.metrics.timestamp);
+
+            // 분석 이력(History) 추가
+            const histList = d('history-list');
+            const histEmpty = d('history-empty');
+            if (histList) {
+              if (histEmpty) histEmpty.style.display = 'none';
+              const card = document.createElement('div');
+              card.className = 'history-item-card';
+              card.innerHTML = `
+                <div class="history-thumb"><img src="${currentSrc}" alt="${res.classInfo.nameKo}"></div>
+                <div class="history-info">
+                  <div class="history-badge-row">
+                    <span class="history-mini-badge ${res.classInfo.badgeClass}">${res.classInfo.nameKo}</span>
+                    <span class="history-time">${res.metrics.timestamp}</span>
+                  </div>
+                  <div class="history-model">${res.identifiedModel || res.classInfo.nameKo}</div>
+                  <div class="history-score">신뢰도 ${res.confidence.toFixed(1)}%</div>
+                </div>
+              `;
+              histList.prepend(card);
+            }
 
           } catch (err) {
+            console.error('분석 에러:', err);
             alert('분석 실패: ' + err.message);
             d('state-loading').style.display = 'none';
             d('state-empty').style.display = 'block';
